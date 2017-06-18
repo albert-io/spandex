@@ -2,16 +2,14 @@ defmodule Spandex.Plug.StartTrace do
   @behaviour Plug
 
   @spec init(Keyword.t) :: Keyword.t
-  def init(config_override), do: config_override
+  def init(opts), do: opts
 
   @spec call(Plug.Conn.t, Keyword.t) :: Plug.Conn.t
-  def call(conn, opts) do
+  def call(conn, _opts) do
     unless ignoring_request?(conn) do
-      case Spandex.Trace.start(opts) do
-        {:ok, pid} ->
-          :ets.insert(:spandex_trace, {self(), pid})
-        _ -> :error
-      end
+      adapter = Confex.get(:spandex, :adapter)
+
+      _ = adapter.start_trace("request")
     end
 
     conn
@@ -22,7 +20,7 @@ defmodule Spandex.Plug.StartTrace do
   end
 
   defp disabled?() do
-    !!Confex.get(:spandex, :disabled?)
+    Confex.get(:spandex, :disabled?)
   end
 
   defp ignored_method?(conn) do

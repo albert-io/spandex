@@ -1,18 +1,62 @@
 defmodule Spandex do
-  @moduledoc """
-  Documentation for Spandex.
-  """
+  use Application
+  require Logger
 
-  def create_services() do
-    unless Confex.get(:spandex, :disabled?) do
-      services = Confex.get(:spandex, :services, [])
-      application_name = Confex.get(:spandex, :application_name)
-      host = Confex.get(:spandex, :host)
-      port = Confex.get(:spandex, :port)
-      protocol = Confex.get(:spandex, :protocol, :msgpack)
-      for {service_name, type} <- services do
-        Spandex.Datadog.Api.create_service(host, port, protocol, service_name, application_name, type)
+  def start(_type, _args) do
+    adapter = Confex.get(:spandex, :adapter)
+
+    _ =
+      if adapter do
+        adapter.startup()
+      else
+        Logger.warn("No adapter configured for Spandex. Please configure one or disable spandex")
       end
-    end
+
+    opts = [strategy: :one_for_one, name: Spandex.Supervisor]
+    Supervisor.start_link([], opts)
+  end
+
+  def update_span(context) do
+    adapter = Confex.get(:spandex, :adapter)
+
+    adapter.update_span(context)
+  end
+
+  def update_top_span(context) do
+    adapter = Confex.get(:spandex, :adapter)
+
+    adapter.update_top_span(context)
+  end
+
+  def finish_trace() do
+    adapter = Confex.get(:spandex, :adapter)
+
+    adapter.finish_span()
+
+    adapter.finish_trace()
+  end
+
+  def span_error(error) do
+    adapter = Confex.get(:spandex, :adapter)
+
+    adapter.span_error(error)
+  end
+
+  def continue_trace(name, trace_id, span_id) do
+    adapter = Confex.get(:spandex, :adapter)
+
+    adapter.continue_trace(name, trace_id, span_id)
+  end
+
+  def current_trace_id() do
+    adapter = Confex.get(:spandex, :adapter)
+
+    adapter.current_trace_id()
+  end
+
+  def current_span_id() do
+    adapter = Confex.get(:spandex, :adapter)
+
+    adapter.current_span_id()
   end
 end

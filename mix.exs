@@ -5,6 +5,7 @@ defmodule Spandex.Mixfile do
     [app: :spandex,
      version: "0.2.8",
      elixir: "~> 1.4",
+     elixirc_paths: elixirc_paths(Mix.env),
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
      description: description(),
@@ -14,13 +15,11 @@ defmodule Spandex.Mixfile do
      deps: deps()]
   end
 
-  # Configuration for the OTP application
-  #
-  # Type "mix help compile.app" for more information
-  def application do
-    # Specify extra applications you'll use from Erlang/Elixir
-    [extra_applications: [:logger],
-     mod: {Spandex.Application, []}]
+  def application() do
+    [
+      extra_applications: [:logger],
+      mod: {Spandex, []}
+    ]
   end
 
   defp description do
@@ -40,6 +39,10 @@ defmodule Spandex.Mixfile do
     ]
   end
 
+  # Specifies which paths to compile per environment.
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_),     do: ["lib"]
+
   # Dependencies can be Hex packages:
   #
   #   {:my_dep, "~> 0.3.0"}
@@ -54,11 +57,9 @@ defmodule Spandex.Mixfile do
       {:confex, "2.0.0"},
       {:decorator, "~> 1.2.0"},
       {:ex_doc, ">= 0.0.0", only: :dev},
-      {:ex2ms, "~> 1.0"},
       {:httpoison, "~> 0.11.1"},
       {:msgpax, "~> 1.1"},
-      {:plug, "~> 1.0"},
-      {:poison, "~> 3.0"}
+      {:plug, "~> 1.0"}
     ]
   end
 end

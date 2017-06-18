@@ -1,4 +1,4 @@
-defmodule Spandex.Span do
+defmodule Spandex.Datadog.Span do
   defstruct [
     :id, :trace_id, :parent_id, :name, :resource,
     :service, :env, :start, :completion_time, :error,
@@ -32,8 +32,8 @@ defmodule Spandex.Span do
     %{span | meta: Map.merge(meta, new_meta)}
   end
 
-  def child_of(parent = %{id: parent_id}, name, id) do
-    %{parent | id: id, name: name, parent_id: parent_id}
+  def child_of(parent = %{id: parent_id, trace_id: trace_id}, name, id) do
+    %{parent | id: id, name: name, parent_id: parent_id, trace_id: trace_id}
   end
 
   def now(), do: DateTime.utc_now |> DateTime.to_unix(:nanoseconds)
@@ -57,14 +57,14 @@ defmodule Spandex.Span do
     %{
       trace_id: span.trace_id,
       span_id: span.id,
-      name: span.name || "unknown",
-      resource: span.resource || "unknown",
-      service: span.service || "unknown",
-      type: span.type || "unknown",
+      name: span.name,
       start: span.start || now(),
       duration: duration(span.completion_time || now(), span.start || now()),
       parent_id: span.parent_id,
-      error: span.error || 0
+      error: span.error || 0,
+      resource: span.resource || "unknown",
+      service: span.service || "unknown",
+      type: span.type || "unknown"
     }
     |> add_meta(span)
     |> add_error_data(span)
@@ -75,7 +75,7 @@ defmodule Spandex.Span do
   defp add_meta(json, %{env: env, user: user, meta: meta}) do
     json
     |> Map.put(:meta, %{})
-    |> add_if_not_nil([:meta, :env], env || "dev")
+    |> put_in([:meta, :env], env || "unknown")
     |> add_if_not_nil([:meta, :user], user)
     |> Map.update!(:meta, fn current_meta -> Map.merge(current_meta, meta) end)
     |> filter_nils

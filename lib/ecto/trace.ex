@@ -1,98 +1,93 @@
 defmodule Spandex.Ecto.Trace do
-  require Spandex.Trace
+  defmodule Error do
+    defexception [:message]
+  end
+
+  require IEx
 
   def trace(log_entry) do
-    now = Spandex.Span.now()
-    if setup(log_entry) == :ok do
-      query = string_query(log_entry)
-      num_rows = num_rows(log_entry)
+    adapter = Confex.get(:spandex, :adapter)
 
-      queue_time = get_time(log_entry, :queue_time)
-      query_time = get_time(log_entry, :query_time)
-      decoding_time = get_time(log_entry, :decode_time)
+    IEx.pry
 
-      Spandex.Trace.span("query") do
-        start = now - (queue_time + query_time + decoding_time)
-        _ = report_error(log_entry)
-        Spandex.Trace.update_span(
-          %{
-            start: start,
-            completion_time: now,
-            service: :ecto,
-            resource: query,
-            meta: %{"sql.query" => query, "sql.rows" => inspect(num_rows)}
-          }
-        )
+    now = adapter.now()
+    _ = setup(adapter, log_entry)
+    query = string_query(log_entry)
+    num_rows = num_rows(log_entry)
 
-        if queue_time != 0 do
-          Spandex.Trace.span("queue") do
-            Spandex.Trace.update_span(%{start: start, completion_time: start + queue_time})
-          end
-        end
+    queue_time = get_time(log_entry, :queue_time)
+    query_time = get_time(log_entry, :query_time)
+    decoding_time = get_time(log_entry, :decode_time)
 
-        if query_time != 0 do
-          Spandex.Trace.span("run_query") do
-            Spandex.Trace.update_span(%{start: start + queue_time, completion_time: start + queue_time + query_time})
-          end
-        end
+    start = now - (queue_time + query_time + decoding_time)
 
-        if decoding_time != 0 do
-          Spandex.Trace.span("decode") do
-            Spandex.Trace.update_span(%{start: start + queue_time + query_time, completion_time: now})
-          end
-        end
-      end
+    adapter.update_span(
+      %{
+        start: start,
+        completion_time: now,
+        service: :ecto,
+        resource: query,
+        type: :db,
+        meta: %{"sql.query" => query, "sql.rows" => inspect(num_rows)}
+      }
+    )
+
+    _ = report_error(adapter, log_entry)
+
+    if queue_time != 0 do
+      _ = adapter.start_span("queue")
+      _ = adapter.update_span(%{start: start, completion_time: start + queue_time})
+      _ = adapter.finish_span()
     end
+
+    if query_time != 0 do
+      _ = adapter.start_span("run_query")
+      _ = adapter.update_span(%{start: start + queue_time, completion_time: start + queue_time + query_time})
+      _ = adapter.finish_span()
+    end
+
+    if decoding_time != 0 do
+      _ = adapter.start_span("decode")
+      _ = adapter.update_span(%{start: start + queue_time + query_time, completion_time: now})
+      _ = adapter.finish_span()
+    end
+
+    finish_ecto_trace(adapter, log_entry)
   end
 
-  defp setup(%{caller_pid: caller_pid}) when is_pid(caller_pid) do
+  defp finish_ecto_trace(adapter, %{caller_pid: caller_pid}) do
+    if caller_pid != self() do
+      adapter.finish_trace()
+    else
+      adapter.finish_span()
+    end
+  end
+  defp finish_ecto_trace(_, _), do: :ok
+
+  defp setup(adapter, %{caller_pid: caller_pid}) when is_pid(caller_pid) do
     if caller_pid == self() do
-      :ok
+      adapter.start_span("query")
     else
-      if Process.whereis(caller_pid) do
-        trace_id =
-          caller_pid
-          |> GenServer.call(:trace_id)
-          |> ok_or_nil
+      trace = Process.info(caller_pid)[:dictionary][:spandex_trace]
 
-        span_id =
-          caller_pid
-          |> GenServer.call(:span_id)
-          |> ok_or_nil
+      trace_id = trace.id
+      span_id =
+        trace
+        |> Map.get(:stack)
+        |> Enum.at(0, %{})
+        |> Map.get(:id)
 
-        _ = Spandex.Trace.continue_trace(trace_id, span_id, [])
-
-        :ok
-      else
-        :no_trace
-      end
-    end
-  rescue
-    _ -> :no_trace
-  end
-
-  defp setup(_) do
-    trace_pid =
-      :spandex_trace
-      |> :ets.lookup(self())
-      |> Enum.at(0)
-      |> Kernel.||({nil, nil})
-      |> elem(1)
-
-    if trace_pid do
-      :ok
-    else
-      :no_trace
+      adapter.continue_trace("query", trace_id, span_id)
     end
   end
 
-  defp ok_or_nil({:ok, value}), do: value
-  defp ok_or_nil(_), do: nil
-
-  defp report_error(%{result: {:ok, _}}), do: :ok
-  defp report_error(%{result: _}) do
-    Spandex.Trace.update_span(%{error: 1})
+  defp setup(_, _) do
     :ok
+  end
+
+  defp report_error(_adapter, %{result: {:ok, _}}), do: :ok
+  defp report_error(adapter, %{result: {:error, error}}) do
+    adapter.span_error(%Error{message: inspect(error)})
   end
 
   defp string_query(%{query: query}) when is_function(query), do: Macro.unescape_string(query.() || "")
