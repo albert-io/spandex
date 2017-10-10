@@ -2,6 +2,10 @@ defmodule Spandex.Ecto.Trace do
   require Spandex.Trace
 
   def trace(log_entry) do
+    if Confex.get(:spandex, :logger_metadata?) do
+      Logger.metadata(trace_id: Spandex.Trace.current_trace_id(), span_id: Spandex.Trace.current_span_id())
+    end
+
     now = Spandex.Span.now()
     if setup(log_entry) == :ok do
       query = string_query(log_entry)
